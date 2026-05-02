@@ -7,29 +7,52 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 
-// Helper for SQLite "Booleans" (0/1)
+export enum DeviceCommand {
+  SetPhase = "set_phase",
+  SetMode = "set_mode",
+  ManualRun = "manual_run",
+  Stop = "stop",
+  Reboot = "reboot",
+}
+
+export type Phase = "germination" | "nursery";
+export type Mode = "auto" | "manual";
+
+export interface CommandPayload {
+  [DeviceCommand.SetPhase]: { phase: Phase };
+  [DeviceCommand.SetMode]: { mode: Mode };
+  [DeviceCommand.ManualRun]: { light?: number; fan?: number; mist?: number };
+  [DeviceCommand.Stop]: Record<string, never>;
+  [DeviceCommand.Reboot]: Record<string, never>;
+}
+
+// Usage: typed command entry
+export type CommandEntry<C extends DeviceCommand = DeviceCommand> = {
+  cmd: C;
+  params: CommandPayload[C];
+};
+
+// Helper for SQLite "Booleans" (0/1) or actual booleans
 const sqliteBool = z
-  .union([z.literal(0), z.literal(1)])
+  .union([z.literal(0), z.literal(1), z.boolean()])
   .transform((v) => v === 1);
 
 const SeedlingDataSchema = z.object({
-  luxLvl: z.number(),
-  tempLvl: z.number(),
-  moistureLvl: z.number(),
-  waterLvl: z.string(),
+  luxLvl: z.number().default(-1),
+  tempLvl: z.number().default(-1),
+  moistureLvl: z.number().default(-1),
+  waterLvl: z.string().default("Unknown"),
 
   // Boolean flags stored as 0 or 1 in SQLite
   isLightOn: sqliteBool,
   isFanOn: sqliteBool,
   isMistingOn: sqliteBool,
-  isSystemOn: sqliteBool,
 
   mode: z.string(),
   phase: z.string(),
 
-  dhtError: z.string().optional(),
-  luxError: z.string().optional(),
-
+  dhtError: sqliteBool.optional(),
+  luxError: sqliteBool.optional(),
   germHudmidAlarm: sqliteBool.optional(),
   waterLvlAlarm: sqliteBool.optional(),
   germRemainingSeconds: z.number().optional(),
@@ -105,10 +128,12 @@ app.post("/api/seedling", async (c) => {
     waterLvlAlarm,
     germRemainingSeconds,
   });
-
+  console.log("Validation result:", parseResult);
   if (!parseResult.success) {
     return c.json({ success: false, error: parseResult.error }, 400);
   }
+
+  console.log("Parsed data:", parseResult.data);
 
   await c.env.DB.prepare(
     `INSERT INTO SeedlingHistory (
@@ -129,17 +154,33 @@ app.post("/api/seedling", async (c) => {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
-      luxLvl,
-      tempLvl,
-      moistureLvl,
-      waterLvl,
-      isLightOn,
-      isFanOn,
-      isMistingOn,
-      mode,
-      phase,
+      parseResult.data.luxLvl,
+      parseResult.data.tempLvl,
+      parseResult.data.moistureLvl,
+      parseResult.data.waterLvl,
+      parseResult.data.isLightOn ? 1 : 0,
+      parseResult.data.isFanOn ? 1 : 0,
+      parseResult.data.isMistingOn ? 1 : 0,
+      parseResult.data.mode,
+      parseResult.data.phase,
+      parseResult.data.dhtError || null,
+      parseResult.data.luxError || null,
+      parseResult.data.germHudmidAlarm !== undefined
+        ? parseResult.data.germHudmidAlarm
+          ? 1
+          : 0
+        : null,
+      parseResult.data.waterLvlAlarm !== undefined
+        ? parseResult.data.waterLvlAlarm
+          ? 1
+          : 0
+        : null,
+      parseResult.data.germRemainingSeconds || null,
     )
     .run();
+
+  //has commands to send back to the device, we can include them in the response
+
   return c.json({ success: true });
 });
 
