@@ -26,6 +26,13 @@ const SeedlingDataSchema = z.object({
 
   mode: z.string(),
   phase: z.string(),
+
+  dhtError: z.string().optional(),
+  luxError: z.string().optional(),
+
+  germHudmidAlarm: sqliteBool.optional(),
+  waterLvlAlarm: sqliteBool.optional(),
+  germRemainingSeconds: z.number().optional(),
 });
 
 const app = new Hono<{ Bindings: Env }>();
@@ -57,9 +64,30 @@ app.post("/api/seedling", async (c) => {
     isMistingOn,
     mode,
     phase,
-    isSystemOn,
+    dhtError,
+    luxError,
+    germHudmidAlarm,
+    waterLvlAlarm,
+    germRemainingSeconds,
   } = await c.req.json();
+  console.log("Received data:", {
+    luxLvl,
+    tempLvl,
+    moistureLvl,
+    waterLvl,
+    isLightOn,
+    isFanOn,
+    isMistingOn,
+    mode,
+    phase,
+    dhtError,
+    luxError,
+    germHudmidAlarm,
+    waterLvlAlarm,
+    germRemainingSeconds,
+  });
 
+  console.log("request body:", await c.req.json());
   // Validate the incoming data
   const parseResult = SeedlingDataSchema.safeParse({
     luxLvl,
@@ -71,7 +99,11 @@ app.post("/api/seedling", async (c) => {
     isMistingOn,
     mode,
     phase,
-    isSystemOn,
+    dhtError,
+    luxError,
+    germHudmidAlarm,
+    waterLvlAlarm,
+    germRemainingSeconds,
   });
 
   if (!parseResult.success) {
@@ -79,7 +111,22 @@ app.post("/api/seedling", async (c) => {
   }
 
   await c.env.DB.prepare(
-    "INSERT INTO SeedlingHistory (luxLvl, tempLvl, moistureLvl, waterLvl, isLightOn, isFanOn, isMistingOn, mode, phase, isSystemOn) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    `INSERT INTO SeedlingHistory (
+      luxLvl,
+      tempLvl,
+      moistureLvl,
+      waterLvl,
+      isLightOn,
+      isFanOn,
+      isMistingOn,
+      mode,
+      phase,
+      dhtError,
+      luxError,
+      germHudmidAlarm,
+      waterLvlAlarm,
+      germRemainingSeconds
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       luxLvl,
@@ -91,7 +138,6 @@ app.post("/api/seedling", async (c) => {
       isMistingOn,
       mode,
       phase,
-      isSystemOn,
     )
     .run();
   return c.json({ success: true });
