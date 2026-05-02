@@ -1,5 +1,5 @@
 {
-  "name": "seedling-system-api",
+  "name": "my-first-worker",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -7,14 +7,17 @@
     "dev": "wrangler dev",
     "start": "wrangler dev",
     "test": "vitest",
-    "cf-typegen": "wrangler types",
-    "postdeploy": "wrangler d1 execute DB --file=schema.sql --remote"
+    "cf-typegen": "wrangler types"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.8.19",
-    "@cloudflare/workers-types": "^4.20250430.0",
+    "@cloudflare/vitest-pool-workers": "^0.15.1",
+    "@types/node": "^25.6.0",
     "typescript": "^5.5.2",
-    "vitest": "~3.0.7",
-    "wrangler": "^4.14.0"
+    "vitest": "^4.1.5",
+    "wrangler": "^4.86.0"
+  },
+  "dependencies": {
+    "hono": "^4.12.16",
+    "zod": "^4.4.1"
   }
 }
