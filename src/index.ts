@@ -35,7 +35,7 @@ export type CommandEntry<C extends DeviceCommand = DeviceCommand> = {
 // Helper for SQLite "Booleans" (0/1) or actual booleans
 const sqliteBool = z
   .union([z.literal(0), z.literal(1), z.boolean()])
-  .transform((v) => v === 1);
+  .transform((v) => v === 1 || v === true);
 
 const SeedlingDataSchema = z.object({
   luxLvl: z.number().default(-1),
@@ -75,6 +75,8 @@ app.get("/api/seedling/history", async (c) => {
   ).run();
   return c.json(results);
 });
+
+const dummyHasCommandsToSendBack = false; // Replace with actual logic to determine if there are commands to send back
 
 app.post("/api/seedling", async (c) => {
   const {
@@ -180,8 +182,39 @@ app.post("/api/seedling", async (c) => {
     .run();
 
   //has commands to send back to the device, we can include them in the response
-
-  return c.json({ success: true });
+  const isGermination = parseResult.data.phase === "germination";
+  const isManual = parseResult.data.mode === "manual";
+  if (dummyHasCommandsToSendBack && isManual) {
+    const commandsToSendBack: CommandEntry[] = [
+      // {
+      //   cmd: DeviceCommand.SetPhase,
+      //   params: { phase: "nursery" },
+      // },
+      // {
+      //   cmd: DeviceCommand.ManualRun,
+      //   params: { light: 0, fan: 1, mist: 1 },
+      // },
+      {
+        cmd: DeviceCommand.SetMode,
+        params: { mode: "auto" },
+      },
+    ];
+    console.log(
+      "Sending commands back to device:",
+      commandsToSendBack,
+      "commands size",
+      commandsToSendBack.length,
+    );
+    return new Response(
+      JSON.stringify({ success: true, commands: commandsToSendBack }),
+      {
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { "Content-Type": "application/json" },
+  });
 });
 
 export default app;
