@@ -1,25 +1,53 @@
-DROP TABLE IF EXISTS Customers;
 DROP TABLE IF EXISTS SeedlingHistory;
+ 
 CREATE TABLE IF NOT EXISTS SeedlingHistory (
-    id INTEGER PRIMARY KEY, 
-    luxLvl NUMBER NOT NULL, 
-    tempLvl NUMBER NOT NULL,
-    moistureLvl NUMBER NOT NULL,
-    waterLvl TEXT NOT NULL,
-    isLightOn BOOLEAN NOT NULL,
-    isFanOn BOOLEAN NOT NULL,
-    isMistingOn BOOLEAN NOT NULL,
-    mode TEXT CHECK(mode IN ('auto', 'manual')) NOT NULL,
-    phase TEXT CHECK(phase IN ('germination', 'nursery')),
-    dhtError BOOLEAN,
-    luxError BOOLEAN,
-    germHudmidAlarm BOOLEAN,
-    waterLvlAlarm BOOLEAN,
+    id                   INTEGER PRIMARY KEY,
+ 
+    -- Sensor readings
+    luxLvl               NUMBER  NOT NULL,
+    tempLvl              NUMBER  NOT NULL,
+    moistureLvl          NUMBER  NOT NULL,
+    waterLvl             TEXT    NOT NULL,
+    waterRawADC          NUMBER,                   -- raw ADC value from water sensor
+ 
+    -- Actuator states
+    isLightOn            BOOLEAN NOT NULL,
+    isFanOn              BOOLEAN NOT NULL,
+    isFan2On             BOOLEAN,                  -- second fan
+    isMistingOn          BOOLEAN NOT NULL,
+    fanBoost             BOOLEAN,                  -- fan boost mode active
+    fanCyclePos          INTEGER,                  -- position in the fan duty cycle
+ 
+    -- Mode / phase
+    mode                 TEXT    CHECK(mode  IN ('auto', 'manual')) NOT NULL,
+    phase                TEXT    CHECK(phase IN ('germination', 'nursery')),
+    nurseryDay           INTEGER,                  -- current day within nursery phase
+ 
+    -- Connectivity
+    wifiOK               BOOLEAN,
+    ntpOK                BOOLEAN,
+ 
+    -- Error / alarm flags
+    shtError             BOOLEAN,                  -- SHT sensor (temp/humidity) error
+    luxError             BOOLEAN,
+    germHumidAlarm       BOOLEAN,                  -- was germHudmidAlarm (typo fixed)
+    waterLvlAlarm        BOOLEAN,
+ 
+    -- Germination countdown
     germRemainingSeconds NUMBER,
-    receivedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+ 
+    receivedAt           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+ 
 CREATE INDEX idx_receivedAt ON SeedlingHistory (receivedAt);
-INSERT INTO SeedlingHistory (luxLvl, tempLvl, moistureLvl, waterLvl, isLightOn, isFanOn, isMistingOn, mode, phase) VALUES (1000, 25, 60, 'Full', 1, 0, 0, 'auto', 'germination');
---  Lux, Temp, Moisture Level, Water Level
--- - Light (on/off), Fan (on/off), Misting (on/off)
--- - Mode (Auto, Manual), Status (on/off)
+ 
+-- Sample row
+INSERT INTO SeedlingHistory (
+    luxLvl, tempLvl, moistureLvl, waterLvl,
+    isLightOn, isFanOn, isMistingOn,
+    mode, phase
+) VALUES (
+    1000, 25, 60, 'Full',
+    1, 0, 0,
+    'auto', 'germination'
+);

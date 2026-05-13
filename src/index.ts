@@ -1,8 +1,7 @@
 export interface Env {
-  // If you set another name in the Wrangler config file for the value for 'binding',
-  // replace "DB" with the variable name you defined.
   DB: D1Database;
 }
+
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
@@ -26,7 +25,6 @@ export interface CommandPayload {
   [DeviceCommand.Reboot]: Record<string, never>;
 }
 
-// Usage: typed command entry
 export type CommandEntry<C extends DeviceCommand = DeviceCommand> = {
   cmd: C;
   params: CommandPayload[C];
@@ -38,23 +36,37 @@ const sqliteBool = z
   .transform((v) => v === 1 || v === true);
 
 const SeedlingDataSchema = z.object({
+  // Sensor readings
   luxLvl: z.number().default(-1),
   tempLvl: z.number().default(-1),
   moistureLvl: z.number().default(-1),
   waterLvl: z.string().default("Unknown"),
+  waterRawADC: z.number().optional(),
 
-  // Boolean flags stored as 0 or 1 in SQLite
+  // Actuator states
   isLightOn: sqliteBool,
   isFanOn: sqliteBool,
+  isFan2On: sqliteBool.optional(),
   isMistingOn: sqliteBool,
+  fanBoost: sqliteBool.optional(),
+  fanCyclePos: z.number().int().optional(),
 
-  mode: z.string(),
-  phase: z.string(),
+  // Mode / phase
+  mode: z.enum(["auto", "manual"]),
+  phase: z.enum(["germination", "nursery"]),
+  nurseryDay: z.number().int().optional(),
 
-  dhtError: sqliteBool.optional(),
+  // Connectivity
+  wifiOK: sqliteBool.optional(),
+  ntpOK: sqliteBool.optional(),
+
+  // Error / alarm flags
+  shtError: sqliteBool.optional(),
   luxError: sqliteBool.optional(),
-  germHudmidAlarm: sqliteBool.optional(),
+  germHumidAlarm: sqliteBool.optional(),
   waterLvlAlarm: sqliteBool.optional(),
+
+  // Germination countdown
   germRemainingSeconds: z.number().optional(),
 });
 
@@ -66,76 +78,108 @@ app.get("/api/seedling/latest", async (c) => {
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM SeedlingHistory ORDER BY receivedAt DESC LIMIT 1",
   ).run();
-  return c.json(results[0]);
+  return c.json(results[0] ?? null);
 });
 
+// Paginated history: GET /api/seedling/history?page=1&pageSize=50
 app.get("/api/seedling/history", async (c) => {
-  const { results } = await c.env.DB.prepare(
-    "SELECT * FROM SeedlingHistory ORDER BY receivedAt DESC",
-  ).run();
-  return c.json(results);
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10));
+  const pageSize = Math.min(
+    200,
+    Math.max(1, parseInt(c.req.query("pageSize") ?? "50", 10)),
+  );
+  const offset = (page - 1) * pageSize;
+
+  const [dataRes, countRes] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT * FROM SeedlingHistory ORDER BY receivedAt DESC LIMIT ? OFFSET ?",
+    )
+      .bind(pageSize, offset)
+      .run(),
+    c.env.DB.prepare("SELECT COUNT(*) AS total FROM SeedlingHistory").run(),
+  ]);
+
+  const total = (countRes.results[0] as { total: number }).total;
+  const totalPages = Math.ceil(total / pageSize);
+
+  return c.json({
+    data: dataRes.results,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    },
+  });
 });
 
-const dummyHasCommandsToSendBack = false; // Replace with actual logic to determine if there are commands to send back
+const dummyHasCommandsToSendBack = false;
 
 app.post("/api/seedling", async (c) => {
+  const body = await c.req.json();
+
   const {
     luxLvl,
     tempLvl,
     moistureLvl,
     waterLvl,
+    waterRawADC,
     isLightOn,
     isFanOn,
+    isFan2On,
     isMistingOn,
+    fanBoost,
+    fanCyclePos,
     mode,
     phase,
-    dhtError,
+    nurseryDay,
+    wifiOK,
+    ntpOK,
+    shtError,
     luxError,
-    germHudmidAlarm,
+    germHumidAlarm,
     waterLvlAlarm,
     germRemainingSeconds,
-  } = await c.req.json();
-  console.log("Received data:", {
-    luxLvl,
-    tempLvl,
-    moistureLvl,
-    waterLvl,
-    isLightOn,
-    isFanOn,
-    isMistingOn,
-    mode,
-    phase,
-    dhtError,
-    luxError,
-    germHudmidAlarm,
-    waterLvlAlarm,
-    germRemainingSeconds,
-  });
+  } = body;
 
-  console.log("request body:", await c.req.json());
-  // Validate the incoming data
+  console.log("Received data:", body);
+
   const parseResult = SeedlingDataSchema.safeParse({
     luxLvl,
     tempLvl,
     moistureLvl,
     waterLvl,
+    waterRawADC,
     isLightOn,
     isFanOn,
+    isFan2On,
     isMistingOn,
+    fanBoost,
+    fanCyclePos,
     mode,
     phase,
-    dhtError,
+    nurseryDay,
+    wifiOK,
+    ntpOK,
+    shtError,
     luxError,
-    germHudmidAlarm,
+    germHumidAlarm,
     waterLvlAlarm,
     germRemainingSeconds,
   });
+
   console.log("Validation result:", parseResult);
+
   if (!parseResult.success) {
     return c.json({ success: false, error: parseResult.error }, 400);
   }
 
-  console.log("Parsed data:", parseResult.data);
+  const d = parseResult.data;
+
+  const boolCol = (v: boolean | undefined) =>
+    v === undefined ? null : v ? 1 : 0;
 
   await c.env.DB.prepare(
     `INSERT INTO SeedlingHistory (
@@ -143,57 +187,54 @@ app.post("/api/seedling", async (c) => {
       tempLvl,
       moistureLvl,
       waterLvl,
+      waterRawADC,
       isLightOn,
       isFanOn,
+      isFan2On,
       isMistingOn,
+      fanBoost,
+      fanCyclePos,
       mode,
       phase,
-      dhtError,
+      nurseryDay,
+      wifiOK,
+      ntpOK,
+      shtError,
       luxError,
-      germHudmidAlarm,
+      germHumidAlarm,
       waterLvlAlarm,
       germRemainingSeconds
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
-      parseResult.data.luxLvl,
-      parseResult.data.tempLvl,
-      parseResult.data.moistureLvl,
-      parseResult.data.waterLvl,
-      parseResult.data.isLightOn ? 1 : 0,
-      parseResult.data.isFanOn ? 1 : 0,
-      parseResult.data.isMistingOn ? 1 : 0,
-      parseResult.data.mode,
-      parseResult.data.phase,
-      parseResult.data.dhtError || null,
-      parseResult.data.luxError || null,
-      parseResult.data.germHudmidAlarm !== undefined
-        ? parseResult.data.germHudmidAlarm
-          ? 1
-          : 0
-        : null,
-      parseResult.data.waterLvlAlarm !== undefined
-        ? parseResult.data.waterLvlAlarm
-          ? 1
-          : 0
-        : null,
-      parseResult.data.germRemainingSeconds || null,
+      d.luxLvl,
+      d.tempLvl,
+      d.moistureLvl,
+      d.waterLvl,
+      d.waterRawADC ?? null,
+      d.isLightOn ? 1 : 0,
+      d.isFanOn ? 1 : 0,
+      boolCol(d.isFan2On),
+      d.isMistingOn ? 1 : 0,
+      boolCol(d.fanBoost),
+      d.fanCyclePos ?? null,
+      d.mode,
+      d.phase,
+      d.nurseryDay ?? null,
+      boolCol(d.wifiOK),
+      boolCol(d.ntpOK),
+      boolCol(d.shtError),
+      boolCol(d.luxError),
+      boolCol(d.germHumidAlarm),
+      boolCol(d.waterLvlAlarm),
+      d.germRemainingSeconds ?? null,
     )
     .run();
 
-  //has commands to send back to the device, we can include them in the response
-  const isGermination = parseResult.data.phase === "germination";
-  const isManual = parseResult.data.mode === "manual";
+  const isManual = d.mode === "manual";
+
   if (dummyHasCommandsToSendBack && isManual) {
     const commandsToSendBack: CommandEntry[] = [
-      // {
-      //   cmd: DeviceCommand.SetPhase,
-      //   params: { phase: "nursery" },
-      // },
-      // {
-      //   cmd: DeviceCommand.ManualRun,
-      //   params: { light: 0, fan: 1, mist: 1 },
-      // },
       {
         cmd: DeviceCommand.SetMode,
         params: { mode: "auto" },
@@ -202,16 +243,15 @@ app.post("/api/seedling", async (c) => {
     console.log(
       "Sending commands back to device:",
       commandsToSendBack,
-      "commands size",
+      "commands size:",
       commandsToSendBack.length,
     );
     return new Response(
       JSON.stringify({ success: true, commands: commandsToSendBack }),
-      {
-        headers: { "Content-Type": "application/json" },
-      },
+      { headers: { "Content-Type": "application/json" } },
     );
   }
+
   return new Response(JSON.stringify({ success: true }), {
     headers: { "Content-Type": "application/json" },
   });
