@@ -8,7 +8,6 @@ import { Env } from "./types";
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use("*", authMiddleware);
 app.use(
   "*",
   cors({
@@ -17,6 +16,12 @@ app.use(
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   }),
 );
+
+app.options("*", (c) => {
+  return c.text("", 204 as any);
+});
+
+app.use("*", authMiddleware);
 
 app.route("/api/seedling", seedling);
 app.route("/api/commands", command);
