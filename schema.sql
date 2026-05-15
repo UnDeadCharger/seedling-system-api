@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS SeedlingHistory;
- 
 CREATE TABLE IF NOT EXISTS SeedlingHistory (
     id                   INTEGER PRIMARY KEY,
  
@@ -39,7 +37,16 @@ CREATE TABLE IF NOT EXISTS SeedlingHistory (
     receivedAt           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
  
-CREATE INDEX idx_receivedAt ON SeedlingHistory (receivedAt);
+CREATE INDEX IF NOT EXISTS idx_receivedAt ON SeedlingHistory (receivedAt);
+
+CREATE TABLE CommandQueue (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  cmd       TEXT NOT NULL,
+  params    TEXT,              -- JSON string
+  cmdStatus TEXT DEFAULT 'pending', -- pending | sent
+  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_commandqueue_status ON CommandQueue(cmdStatus);
  
 -- Sample row
 INSERT INTO SeedlingHistory (
