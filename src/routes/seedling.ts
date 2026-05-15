@@ -92,7 +92,7 @@ seedling.post("/", async (c) => {
 
   // Fetch pending commands (max 2 to stay under ESP32 600 byte buffer)
   const { results } = await c.env.DB.prepare(
-    "SELECT id, cmd, params FROM CommandQueue WHERE status = 'pending' ORDER BY createdAt ASC LIMIT 2",
+    "SELECT id, cmd, params FROM CommandQueue WHERE cmdStatus = 'pending' ORDER BY createdAt ASC LIMIT 2",
   ).all();
 
   if (results.length > 0) {
@@ -102,7 +102,7 @@ seedling.post("/", async (c) => {
     }));
     const ids = results.map((r) => r.id).join(",");
     await c.env.DB.prepare(
-      `UPDATE CommandQueue SET status = 'sent' WHERE id IN (${ids})`,
+      `UPDATE CommandQueue SET cmdStatus = 'sent' WHERE id IN (${ids})`,
     ).run();
     return c.json({ success: true, commands });
   }
