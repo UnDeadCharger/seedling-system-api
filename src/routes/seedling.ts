@@ -59,7 +59,7 @@ seedling.get("/history", async (c) => {
   const totalPages = Math.ceil(total / pageSize);
 
   return c.json({
-    data: dataRes.results,
+    rows: dataRes.results,
     total,
     page,
     pageSize,
