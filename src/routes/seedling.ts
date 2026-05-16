@@ -103,7 +103,7 @@ seedling.get("/chart", async (c) => {
     .bind(from, to)
     .all();
 
-  return c.json({ data: results });
+  return c.json(results);
 });
 
 //example params: from=2024-01-01T00:00:00Z&to=2024-01-07T00:00:00Z
@@ -129,7 +129,7 @@ seedling.get("/export", async (c) => {
     .bind(from, to)
     .all();
 
-  return c.json({ data: results });
+  return c.json(results);
 });
 
 seedling.post("/", async (c) => {
